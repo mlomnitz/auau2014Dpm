@@ -3,6 +3,7 @@
 
 #include "StPicoHFMaker/StPicoHFMaker.h"
 #include "TNtuple.h"
+
 /* **************************************************
  *  Sample class fo HF picoDST analysis
  * --------------------------------------------------
@@ -54,6 +55,10 @@
  * **************************************************
  */
 
+class TH1F;
+class TH2F;
+class TH3F;
+
 class StPicoDst;
 class StPicoDstMaker;
 class StPicoEvent;
@@ -63,22 +68,29 @@ class StPicoHFEvent;
 class StHFPair;
 class StHFTriplet;
 class StHFCuts;
+class StDpmHists;
+
+class StRefMultCorr;
+class StEventPlane;
 
 class StPicoDpmAnaMaker : public StPicoHFMaker 
 {
  public:
-  StPicoDpmAnaMaker(char const* name, StPicoDstMaker* picoMaker, char const* outputBaseFileName,  
-		       char const* inputHFListHFtree);
+  StPicoDpmAnaMaker(char const* name, StPicoDstMaker* picoMaker,
+		    StRefMultCorr* grefmultCorrUtil, StEventPlane* eventPlaneMaker,
+		    char const* outputBaseFileName, char const* inputHFListHFtree);
   virtual ~StPicoDpmAnaMaker();
   
   virtual Int_t InitHF();
   virtual Int_t MakeHF();
   virtual void  ClearHF(Option_t *opt);
   virtual Int_t FinishHF();
-  // -- Lomnitz: Added this cut funtions to to filter iwthout having to make pairs
   virtual bool isCloseTracks(StPicoTrack const*, StPicoTrack const*,StThreeVectorF const & , float) const;
   // -- ADOPT DECAY CHANNELS, if wished ------------------- 
   void setDecayChannel(unsigned int u) { mDecayChannel = u; }
+  bool loadEventPlaneCorr(StEventPlane const *mEventPlane);
+  bool isHistoTriplet(StHFTriplet const* const);
+
 
   enum eDecayChannel {kChannel1, kChannel2, kChannel3};
 
@@ -88,6 +100,8 @@ class StPicoDpmAnaMaker : public StPicoHFMaker
   virtual bool isProton(StPicoTrack const*) const;
   
  private:
+  StRefMultCorr* mGRefMultCorrUtil;
+  StEventPlane* mEventPlane;
   int createCandidates();
   int analyzeCandidates();
 
@@ -97,8 +111,7 @@ class StPicoDpmAnaMaker : public StPicoHFMaker
 
   // -- ADD USER MEMBERS HERE ------------------- 
   TNtuple *ntp_DMeson;
-
-
+  StDpmHists* mHists;
 
   // -- ADD USER MEMBERS HERE -------------------
 

@@ -39,6 +39,9 @@
 #include "StPicoHFMaker/StPicoHFEvent.h"
 #include "StPicoHFMaker/StHFCuts.h"
 
+#include "StRoot/StRefMultCorr/StRefMultCorr.h"
+#include "StRoot/StRefMultCorr/CentralityMaker.h"
+#include "StRoot/StEventPlane/StEventPlane.h"
 #include "StPicoDpmAnaMaker/StPicoDpmAnaMaker.h"
 
 #else
@@ -48,6 +51,9 @@ class StChain;
 class StMaker;
 class StChain;
 class StPicoDstMaker;
+class StRefMultCorr;
+class StEventPlane;
+
 StChain *chain;
 
 void runPicoDpmAnaMaker(const Char_t *inputFile="test.list", const Char_t *outputFile="outputBaseName",  unsigned int makerMode = 0 /*kAnalyze*/, 
@@ -73,6 +79,7 @@ void runPicoDpmAnaMaker(const Char_t *inputFile="test.list", const Char_t *outpu
   gSystem->Load("StPicoDstMaker");
   gSystem->Load("StPicoPrescales");
   gSystem->Load("StRefMultCorr");
+  gSystem->Load("StEventPlane");
 
   gSystem->Load("StPicoCutsBase");
   gSystem->Load("StPicoHFMaker");
@@ -89,7 +96,7 @@ void runPicoDpmAnaMaker(const Char_t *inputFile="test.list", const Char_t *outpu
 
   TString sInputFile(inputFile);
   TString sInputListHF("");  
-    TString sProductionBasePath(productionBasePath);
+  TString sProductionBasePath(productionBasePath);
   TString sTreeName(treeName);
 
   if (makerMode == StPicoHFMaker::kAnalyze) {
@@ -126,7 +133,12 @@ void runPicoDpmAnaMaker(const Char_t *inputFile="test.list", const Char_t *outpu
   }
   
   StPicoDstMaker* picoDstMaker = new StPicoDstMaker(0, sInputFile, "picoDstMaker");
-  StPicoDpmAnaMaker* picoDpmAnaMaker = new StPicoDpmAnaMaker("picoDpmAnaMaker", picoDstMaker, outputFile, sInputListHF);
+  StRefMultCorr* grefmultCorrUtil  = CentralityMaker::instance()->getgRefMultCorr();
+  StEventPlane*  eventPlaneMaker = new StEventPlane("eventPlaneMaker",picoDstMaker,grefmultCorrUtil);
+  
+  StPicoDpmAnaMaker* picoDpmAnaMaker = new StPicoDpmAnaMaker("picoDpmAnaMaker", picoDstMaker, 
+							     grefmultCorrUtil, eventPlaneMaker,
+							     outputFile, sInputListHF);
   picoDpmAnaMaker->setMakerMode(makerMode);
 
   StHFCuts* hfCuts = new StHFCuts("hfBaseCuts");
@@ -161,14 +173,14 @@ void runPicoDpmAnaMaker(const Char_t *inputFile="test.list", const Char_t *outpu
 				 //				 0.008, 0.008, 0.008);
   // --- Lomnitz cuts to remove noise from ghosting
   //Single track pt
-  hfCuts->setCutPtRange(0.6,2.0,StHFCuts::kPion);
-  hfCuts->setCutPtRange(0.6,2.0,StHFCuts::kKaon);
+  hfCuts->setCutPtRange(0.6,10.0,StHFCuts::kPion);
+  hfCuts->setCutPtRange(0.6,10.0,StHFCuts::kKaon);
   //TPC setters
   hfCuts->setCutTPCNSigmaPion(3.0);
   hfCuts->setCutTPCNSigmaKaon(3.0);
   //TOF setters, need to set pt range as well
   hfCuts->setCutTOFDeltaOneOverBeta(0.05, StHFCuts::kKaon);
-  hfCuts->setCutPtotRangeHybridTOF(0.6,2.0,StHFCuts::kKaon);
+  hfCuts->setCutPtotRangeHybridTOF(0.6,10.0,StHFCuts::kKaon);
   // ========================================================================================
 
   // ========================================================================================

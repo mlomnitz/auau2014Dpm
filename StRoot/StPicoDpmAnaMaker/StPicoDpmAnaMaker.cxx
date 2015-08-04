@@ -1,6 +1,9 @@
 #include <vector>
 
 #include "TClonesArray.h"
+#include "TH1F.h"
+#include "TH2F.h"
+#include "TH3F.h"
 
 #include "StThreeVectorF.hh"
 #include "StLorentzVectorF.hh"
@@ -16,16 +19,21 @@
 #include "StPicoHFMaker/StHFPair.h"
 #include "StPicoHFMaker/StHFTriplet.h"
 
+#include "StRoot/StRefMultCorr/StRefMultCorr.h"
+#include "StRoot/StEventPlane/StEventPlane.h"
+
 #include "StPicoDpmAnaMaker.h"
+#include "StDpmHists.h"
 #include "SystemOfUnits.h"
 ClassImp(StPicoDpmAnaMaker)
 
 // _________________________________________________________
-StPicoDpmAnaMaker::StPicoDpmAnaMaker(char const* name, StPicoDstMaker* picoMaker, char const* outputBaseFileName,  
-					   char const* inputHFListHFtree = "") :
+StPicoDpmAnaMaker::StPicoDpmAnaMaker(char const* name, StPicoDstMaker* picoMaker, 
+				     StRefMultCorr* grefmultCorrUtil, StEventPlane* eventPlaneMaker,
+				     char const* outputBaseFileName, char const* inputHFListHFtree = "") :
   StPicoHFMaker(name, picoMaker, outputBaseFileName, inputHFListHFtree),
-  mDecayChannel(kChannel1) {
-  // constructor
+  mGRefMultCorrUtil(grefmultCorrUtil), mEventPlane(eventPlaneMaker), mDecayChannel(kChannel1)
+{
 }
 
 // _________________________________________________________
@@ -40,7 +48,8 @@ int StPicoDpmAnaMaker::InitHF() {
 
   // EXAMPLE //  mOutList->Add(new TH1F(...));
   // EXAMPLE //  TH1F* hist = static_cast<TH1F*>(mOutList->Last());
-    ntp_DMeson = new TNtuple("ntp","DMeson Tree","flag:dca1:dca2:dca3:dcaMax:pt1:pt2:pt3:theta_hs:decayL_hs:pt_hs:mass_hs:eta_hs:phi_hs:dV0Max_hs:kaonTof");
+  ntp_DMeson = new TNtuple("ntp","DMeson Tree","flag:dca1:dca2:dca3:dcaMax:pt1:pt2:pt3:theta_hs:decayL_hs:pt_hs:mass_hs:eta_hs:phi_hs:dV0Max_hs:kaonTof");
+  mHists = new StDpmHists();
   return kStOK;
 }
 
@@ -51,8 +60,11 @@ void StPicoDpmAnaMaker::ClearHF(Option_t *opt="") {
 
 // _________________________________________________________
 int StPicoDpmAnaMaker::FinishHF() {
-  if( isMakerMode() != StPicoHFMaker::kWrite )
+  if( isMakerMode() != StPicoHFMaker::kWrite ){
     ntp_DMeson->Write();
+    mHists->closeFile();
+  }
+  
   return kStOK;
 }
 
@@ -124,6 +136,27 @@ int StPicoDpmAnaMaker::createCandidates() {
 // _________________________________________________________
 int StPicoDpmAnaMaker::analyzeCandidates() {
 
+  //Loading event centrality and event plane bins
+  if (!mGRefMultCorrUtil){
+    LOG_WARN << " No mGRefMultCorrUtil! Skip! " << endl;
+    return kStWarn;
+  }
+  StThreeVectorF const pVtx = mPicoDst->event()->primaryVertex();
+  mGRefMultCorrUtil->init(mPicoDst->event()->runId());
+  mGRefMultCorrUtil->initEvent(mPicoDst->event()->grefMult(), pVtx.z(), mPicoDst->event()->ZDCx()) ;
+  int const centrality  = mGRefMultCorrUtil->getCentralityBin9();
+  if (centrality < 0 || centrality > 8) return kStOk;
+  const float reweight = mGRefMultCorrUtil->getWeight();
+  //Event plane 
+  if (!loadEventPlaneCorr(mEventPlane)){
+    LOG_WARN << "Event plane calculations unavalable! Skipping" << endm;
+    //mFailedRunnumber = mPicoDst->event()->runId();
+    return kStOK;
+  }
+  float const eventPlane = mEventPlane->getEventPlane();
+  int const eventPlane_bin = (int)((eventPlane) / 0.3141592) ;
+  if (eventPlane_bin < 0  ||  eventPlane_bin > 9) return kStOk;
+  mHists->addEventPlane(centrality, eventPlane, mEventPlane->getResolutionRandom(), mEventPlane->getResolutionEta());
   // --- Analyze previously constructed candidates and output to ntuple
   // -- Decay channel1
   TClonesArray const * aCandidates= mPicoHFEvent->aHFSecondaryVertices();
@@ -158,6 +191,18 @@ int StPicoDpmAnaMaker::analyzeCandidates() {
       if( pion1->charge()>0 && kaon->charge()<0 ) flag=0.; // -- D+
       if( pion1->charge()<0 && kaon->charge()>0 ) flag=1.; // -- D-
       
+      //Event plane stuff
+      int trkIndex[3] = { triplet->particle1Idx() , triplet->particle2Idx(), triplet->particle3Idx() };
+      float psi = mEventPlane->getEventPlane(3, trkIndex);
+      float dPhi = triplet->phi() - psi;
+      
+      while(dPhi < 0) dPhi += TMath::Pi();
+      while(dPhi >= TMath::Pi()) dPhi -= TMath::Pi();
+      
+      if ( isHistoTriplet(triplet) ){
+	mHists->fillUnlikeSign(triplet, centrality, dPhi, reweight);
+      }
+
       int ii=0;
       float ntVar[30];
       float const dca1 = triplet->particle1Dca();
@@ -226,4 +271,37 @@ bool StPicoDpmAnaMaker::isCloseTracks(StPicoTrack const * const trk1, StPicoTrac
   if(dca > 0.01) return false;
 // -- good pair
   return true;
+}
+// _________________________________________________________
+bool StPicoDpmAnaMaker::loadEventPlaneCorr(StEventPlane const * mEventPlane)
+{
+  //needs to implement, will currently break maker
+  if (!mEventPlane)
+    {
+      LOG_WARN << "No EventPlane ! Skipping! " << endm;
+      return kFALSE;
+    }
+  if (!mEventPlane->getAcceptEvent())
+    {
+      // LOG_WARN << "StPicoMixedEvent::THistograms and TProiles NOT found! shoudl check the input Qvector files From HaoQiu ! Skipping this run! " << endm;
+      return kFALSE;
+    }
+  return kTRUE;
+}
+// _________________________________________________________
+bool StPicoDpmAnaMaker::isHistoTriplet(StHFTriplet const* const triplet)
+{
+  StPicoTrack const* pion1 = mPicoDst->track(triplet->particle1Idx());
+  StPicoTrack const* pion2 = mPicoDst->track(triplet->particle2Idx());
+  StPicoTrack const* kaon = mPicoDst->track(triplet->particle3Idx());
+ 
+  float const pt1=pion1->gPt();
+  float  const pt2=pion2->gPt();
+  float  const pt3=kaon->gPt();
+  return cos(triplet->pointingAngle()) > 0.998 && 
+    triplet->dcaDaughters12() < 0.008 && triplet->dcaDaughters23() < 0.008 && 
+    triplet->dcaDaughters31() < 0.008 && 
+    triplet->particle1Dca() > 0.01 && triplet->particle2Dca() > 0.01 && 
+    triplet->particle3Dca() > 0.008 && pt1 > 0.8 && pt2>0.8 && pt3>0.6 &&
+    triplet->dV0Max()<0.02;
 }

@@ -22,18 +22,18 @@
 # ###############################################
 
 # -- baseFolder of job
-set baseFolder=/global/homes/m/mlomnitz/mlomnitz_projectdir/michael
+set baseFolder=/global/homes/m/mlomnitz/mlomnitz_projectdir/auau2014Dpm
 
 # --input file 
 #    makerMode 0,1 : list must contain picoDst.root files
 #    makerMode 2   : list must contain ${treeName}.root files
-set input=${baseFolder}/pico_split01.list
+set input=${baseFolder}/RunQvector.list
 #set input=${baseFolder}/DpmProd.All.D0.list
 # -- set maker mode
 #    0 - kAnalyze, 
 #    1 - kWrite
 #    2 - kRead
-set makerMode=1
+set makerMode=2
 
 # -- set root macro
 set rootMacro=runPicoDpmAnaMaker.C
